@@ -1,18 +1,20 @@
 ---
-name: lobsterai-skill-zip-long-doc-agent
+name: lobsterai-report-agent
+description: 超长可行性研究报告多Agent协作撰写系统。Phase 0 需求确认 → Phase 1 规划师输出大纲 → Phase 2 分批并行子Agent撰写 → Phase 2.5 跨章一致性审查 → Phase 3 整合师汇总输出精美 docx。
+version: "4.0.0"
+homepage: https://github.com/jinqiu193/lobsterai-report-agent
 license: MIT
 metadata:
-  version: "4.0.0"
-  category: document-generation
-  triggers:
-    - "写可研"
-    - "写报告"
-    - "多章节"
-    - "并行撰写"
-    - "agent写文档"
-description: >
-  超长可行性研究报告多Agent协作撰写系统。
-  Phase 0 需求确认 → Phase 1 规划师输出大纲 → Phase 2 分批并行子Agent撰写 →
+  openclaw:
+    category: document-generation
+    triggers:
+      - "写可研"
+      - "写报告"
+      - "多章节"
+      - "并行撰写"
+      - "agent写文档"
+---
+
   Phase 2.5 跨章一致性审查 → Phase 3 整合师汇总输出精美 docx。
   核心文件：src/engine.py（核心逻辑）、src/config.py（配置）、integrate_report.py（兼容 facade）。
 ---
