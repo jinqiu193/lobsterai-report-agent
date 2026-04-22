@@ -1,5 +1,5 @@
 ---
-name: lobsterai-report-agent
+name: lobsterai-长报告撰写
 description: 超长可行性研究报告多Agent协作撰写系统。Phase 0 需求确认 → Phase 1 规划师输出大纲 → Phase 2 分批并行子Agent撰写 → Phase 2.5 跨章一致性审查 → Phase 3 整合师汇总输出精美 docx。
 version: "4.0.0"
 homepage: https://github.com/jinqiu193/lobsterai-report-agent
