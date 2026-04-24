@@ -6,12 +6,13 @@ engine.py - 核心业务逻辑
 
 import os, re, hashlib, glob, json as json_module
 from datetime import datetime
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Optional, Any
 
 from docx import Document
-from docx.shared import Pt, Inches, Cm
+from docx.shared import Pt, Inches, Cm, RGBColor, Emu
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
@@ -249,18 +250,30 @@ def _add_table_to_doc(doc, rows: List[List[str]]) -> None:
     col_count = max(col_count, 1)
     tbl = doc.add_table(rows=len(rows), cols=col_count)
     tbl.style = 'Table Grid'
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
     for r_idx, row_data in enumerate(rows):
         cells = tbl.rows[r_idx].cells
         for c_idx in range(len(cells)):
             text = row_data[c_idx] if c_idx < len(row_data) else ''
             cells[c_idx].text = text
             for para in cells[c_idx].paragraphs:
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 for run in para.runs:
                     run.font.name = '宋体'
                     run.font.size = Pt(10)
                     run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-                para.paragraph_format.space_before = Pt(2)
-                para.paragraph_format.space_after = Pt(2)
+                    # 表头加粗 + 白色字体
+                    if r_idx == 0:
+                        run.font.bold = True
+                        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                para.paragraph_format.space_before = Pt(3)
+                para.paragraph_format.space_after = Pt(3)
+            # 表头深色背景
+            if r_idx == 0:
+                _set_cell_shading(cells[c_idx], '1F4E79')
+            # 偶数行浅色背景（交替行色）
+            elif r_idx % 2 == 0:
+                _set_cell_shading(cells[c_idx], 'E8EEF4')
 
 
 def _flush_table(doc, pending_table: List[str]) -> None:
@@ -305,34 +318,68 @@ def md_to_paragraphs(doc, content: str, add_page_break: bool = True) -> None:
             _flush_table(doc, pending_table)
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p.paragraph_format.space_before = Pt(12)
-            p.paragraph_format.space_after = Pt(10)
+            p.paragraph_format.space_before = Pt(24)
+            p.paragraph_format.space_after = Pt(8)
             r = p.add_run(_clean_inline(line[2:]))
-            r.font.size = Pt(18); r.font.bold = True; cjk(r, '黑体')
+            r.font.size = Pt(20)
+            r.font.bold = True
+            r.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
+            cjk(r, '黑体')
+            # 章节标题下方加装饰线
+            pPr = p._p.get_or_add_pPr()
+            pBdr = OxmlElement('w:pBdr')
+            btm = OxmlElement('w:bottom')
+            btm.set(qn('w:val'), 'single')
+            btm.set(qn('w:sz'), '8')
+            btm.set(qn('w:space'), '4')
+            btm.set(qn('w:color'), '2E75B6')
+            pBdr.append(btm)
+            pPr.append(pBdr)
             continue
 
         if line.startswith('## '):
             _flush_table(doc, pending_table)
             p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(10); p.paragraph_format.space_after = Pt(6)
+            p.paragraph_format.space_before = Pt(14); p.paragraph_format.space_after = Pt(6)
             r = p.add_run(_clean_inline(line[3:]))
-            r.font.size = Pt(14); r.font.bold = True; cjk(r, '楷体')
+            r.font.size = Pt(15); r.font.bold = True
+            r.font.color.rgb = RGBColor(0x2E, 0x75, 0xB6)
+            cjk(r, '黑体')
+            # 二级标题左侧色条
+            pPr = p._p.get_or_add_pPr()
+            pBdr = OxmlElement('w:pBdr')
+            left = OxmlElement('w:left')
+            left.set(qn('w:val'), 'single')
+            left.set(qn('w:sz'), '18')
+            left.set(qn('w:space'), '4')
+            left.set(qn('w:color'), '2E75B6')
+            pBdr.append(left)
+            pPr.append(pBdr)
+            p.paragraph_format.left_indent = Cm(0.3)
             continue
 
         if line.startswith('### '):
             _flush_table(doc, pending_table)
             p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(8); p.paragraph_format.space_after = Pt(4)
+            p.paragraph_format.space_before = Pt(10); p.paragraph_format.space_after = Pt(4)
             r = p.add_run(_clean_inline(line[4:]))
-            r.font.size = Pt(12); r.font.bold = True; cjk(r, '仿宋')
+            r.font.size = Pt(13); r.font.bold = True
+            r.font.color.rgb = RGBColor(0x40, 0x40, 0x40)
+            cjk(r, '楷体')
+            # 三级标题小圆点装饰
+            r2 = p.add_run(' ●')
+            r2.font.size = Pt(8)
+            r2.font.color.rgb = RGBColor(0x2E, 0x75, 0xB6)
             continue
 
         if line.startswith('#### '):
             _flush_table(doc, pending_table)
             p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(6); p.paragraph_format.space_after = Pt(3)
+            p.paragraph_format.space_before = Pt(8); p.paragraph_format.space_after = Pt(3)
             r = p.add_run(_clean_inline(line[5:]))
-            r.font.size = Pt(11); r.font.bold = True; cjk(r, '仿宋')
+            r.font.size = Pt(12); r.font.bold = True
+            r.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+            cjk(r, '仿宋')
             continue
 
         if _is_table_line(line) and not _is_separator_line(line):
@@ -342,11 +389,12 @@ def md_to_paragraphs(doc, content: str, add_page_break: bool = True) -> None:
         _flush_table(doc, pending_table)
         p = doc.add_paragraph()
         p.paragraph_format.first_line_indent = Cm(0.74)
-        p.paragraph_format.line_spacing = Pt(22)
+        p.paragraph_format.line_spacing = Pt(24)
         p.paragraph_format.space_before = Pt(2)
         p.paragraph_format.space_after = Pt(6)
         r = p.add_run(_clean_inline(line))
         r.font.size = Pt(12); cjk(r, '宋体')
+        r.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
 
     _flush_table(doc, pending_table)
     if add_page_break:
@@ -452,6 +500,81 @@ def _build_summary(chapters_data, max_chars: int = 800) -> List[str]:
     return lines or ['本报告对项目建设进行了全面可行性分析。']
 
 
+# ============ 页眉页脚 ============
+
+def _add_header_footer(doc, project_name: str):
+    """为文档添加页眉和页脚"""
+    section = doc.sections[0]
+    # 页眉
+    header = section.header
+    header.is_linked_to_previous = False
+    hp = header.paragraphs[0]
+    hp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    hr = hp.add_run(project_name)
+    hr.font.size = Pt(9)
+    hr.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+    cjk(hr, '宋体')
+    # 页眉下方加细线
+    pPr = hp._p.get_or_add_pPr()
+    pBdr = OxmlElement('w:pBdr')
+    bottom = OxmlElement('w:bottom')
+    bottom.set(qn('w:val'), 'single')
+    bottom.set(qn('w:sz'), '4')
+    bottom.set(qn('w:space'), '1')
+    bottom.set(qn('w:color'), 'AAAAAA')
+    pBdr.append(bottom)
+    pPr.append(pBdr)
+
+    # 页脚（页码）
+    footer = section.footer
+    footer.is_linked_to_previous = False
+    fp = footer.paragraphs[0]
+    fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run1 = fp.add_run('— ')
+    run1.font.size = Pt(9)
+    run1.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+    fldChar1 = OxmlElement('w:fldChar')
+    fldChar1.set(qn('w:fldCharType'), 'begin')
+    run2 = fp.add_run()
+    run2._r.append(fldChar1)
+    instrText = OxmlElement('w:instrText')
+    instrText.set(qn('xml:space'), 'preserve')
+    instrText.text = ' PAGE '
+    run3 = fp.add_run()
+    run3._r.append(instrText)
+    fldChar2 = OxmlElement('w:fldChar')
+    fldChar2.set(qn('w:fldCharType'), 'end')
+    run4 = fp.add_run()
+    run4._r.append(fldChar2)
+    run5 = fp.add_run(' —')
+    run5.font.size = Pt(9)
+    run5.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+
+
+def _add_horizontal_line(doc, color='1F4E79', width='12'):
+    """添加水平装饰线"""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(4)
+    p.paragraph_format.space_after = Pt(4)
+    pPr = p._p.get_or_add_pPr()
+    pBdr = OxmlElement('w:pBdr')
+    bottom = OxmlElement('w:bottom')
+    bottom.set(qn('w:val'), 'single')
+    bottom.set(qn('w:sz'), width)
+    bottom.set(qn('w:space'), '1')
+    bottom.set(qn('w:color'), color)
+    pBdr.append(bottom)
+    pPr.append(pBdr)
+
+
+def _set_cell_shading(cell, color: str):
+    """设置单元格背景色"""
+    shading = OxmlElement('w:shd')
+    shading.set(qn('w:fill'), color)
+    shading.set(qn('w:val'), 'clear')
+    cell._tc.get_or_add_tcPr().append(shading)
+
+
 # ============ 最终文档生成 =============
 
 def generate_final_doc(chapters_data, page_estimates, output_path: str = None, incremental: bool = True):
@@ -476,42 +599,113 @@ def generate_final_doc(chapters_data, page_estimates, output_path: str = None, i
     s.top_margin = Inches(1.0); s.bottom_margin = Inches(1.0)
     s.left_margin = Inches(1.18); s.right_margin = Inches(1.18)
 
-    # 封面
-    for _ in range(6): doc.add_paragraph()
-    for txt, size, bold, font in [
-        (plan.get('org_name', '编制单位'), Pt(26), True, '黑体'),
-        (plan.get('project_name', '项目名称'), Pt(32), True, '黑体'),
-    ]:
-        p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r = p.add_run(txt); r.font.size = size; r.font.bold = bold; cjk(r, font)
-    for _ in range(3): doc.add_paragraph()
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(plan.get('doc_type', '可行性研究报告'))
-    r.font.size = Pt(22); cjk(r, '楷体')
+    # ── 封面 ──
+    for _ in range(4): doc.add_paragraph()
+
+    # 上装饰线
+    _add_horizontal_line(doc, color='1F4E79', width='18')
+
+    # 编制单位
+    org_name = plan.get('org_name', '')
+    if org_name:
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(16)
+        p.paragraph_format.space_after = Pt(6)
+        r = p.add_run(org_name)
+        r.font.size = Pt(18)
+        r.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
+        cjk(r, '黑体')
+
+    # 项目名称
+    project_name = plan.get('project_name', plan.get('title', '项目名称'))
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(12)
+    p.paragraph_format.space_after = Pt(8)
+    r = p.add_run(project_name)
+    r.font.size = Pt(36)
+    r.font.bold = True
+    r.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
+    cjk(r, '黑体')
+
+    # 下装饰线
+    _add_horizontal_line(doc, color='1F4E79', width='18')
+
+    # 文档类型
+    for _ in range(2): doc.add_paragraph()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_after = Pt(4)
+    doc_type = plan.get('doc_type', '可行性研究报告')
+    r = p.add_run(doc_type)
+    r.font.size = Pt(24)
+    r.font.color.rgb = RGBColor(0x2E, 0x75, 0xB6)
+    cjk(r, '楷体')
+
+    # 封面底部信息
     for _ in range(8): doc.add_paragraph()
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    unit = plan.get('编制单位', '编制单位')
+    _add_horizontal_line(doc, color='CCCCCC', width='6')
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(8)
+    unit = plan.get('编制单位', org_name or '编制单位')
     build_time = plan.get('编制时间', datetime.now().strftime('%Y年%m月'))
-    r = p.add_run(f'编制单位：{unit}\n编制时间：{build_time}')
-    r.font.size = Pt(14); cjk(r, '宋体')
+    r = p.add_run(f'编制单位：{unit}')
+    r.font.size = Pt(14)
+    r.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
+    cjk(r, '宋体')
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run(f'编制时间：{build_time}')
+    r.font.size = Pt(14)
+    r.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
+    cjk(r, '宋体')
+
     doc.add_page_break()
 
-    # 执行摘要
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_before = Pt(12); p.paragraph_format.space_after = Pt(10)
-    r = p.add_run('执行摘要'); r.font.size = Pt(18); r.font.bold = True; cjk(r, '黑体')
+    # ── 页眉页脚 ──
+    _add_header_footer(doc, project_name)
+
+    # ── 执行摘要 ──
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(24)
+    p.paragraph_format.space_after = Pt(6)
+    r = p.add_run('执行摘要')
+    r.font.size = Pt(20)
+    r.font.bold = True
+    r.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
+    cjk(r, '黑体')
+
+    _add_horizontal_line(doc, color='2E75B6', width='8')
+
     for pt in _build_summary(changed_chapters if changed_chapters else chapters_data):
         p2 = doc.add_paragraph()
         p2.paragraph_format.first_line_indent = Cm(0.74)
-        p2.paragraph_format.line_spacing = Pt(22)
-        p2.paragraph_format.space_after = Pt(6)
-        r2 = p2.add_run(pt); r2.font.size = Pt(12); cjk(r2, '宋体')
+        p2.paragraph_format.line_spacing = Pt(24)
+        p2.paragraph_format.space_after = Pt(8)
+        r2 = p2.add_run(pt)
+        r2.font.size = Pt(12)
+        r2.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+        cjk(r2, '宋体')
     doc.add_page_break()
 
-    # 目录
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_before = Pt(12); p.paragraph_format.space_after = Pt(10)
-    r = p.add_run('目  录'); r.font.size = Pt(18); r.font.bold = True; cjk(r, '黑体')
+    # ── 目录 ──
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(24)
+    p.paragraph_format.space_after = Pt(6)
+    r = p.add_run('目    录')
+    r.font.size = Pt(20)
+    r.font.bold = True
+    r.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
+    cjk(r, '黑体')
+
+    _add_horizontal_line(doc, color='2E75B6', width='8')
+
     add_toc_entry(doc, '一', '执行摘要', 1, toc_type='summary')
     seen = set()
     for seq, _, title, content, _ in (changed_chapters if changed_chapters else chapters_data):
@@ -577,7 +771,7 @@ def generate_with_accurate_toc(txt_dir: str = None, final_doc: str = None):
     print("[BUILD] 生成整合报告...")
     generate_final_doc(chapters_data, pe, output_path=final_doc)
 
-    md_path = final_doc.replace('.docx', '-纯文本.md')
+    md_path = os.path.splitext(final_doc)[0] + '-纯文本.md'
     with open(md_path, 'w', encoding='utf-8') as f:
         f.write('\n\n---\n\n'.join(c for _, _, _, c, _ in chapters_data))
     print(f"[MD] 纯文本版已保存: {md_path}")
@@ -637,6 +831,11 @@ def convert_single_chapter_inline(txt_path: str, docx_path: str):
     return docx_path
 
 
+def _pool_ping_test() -> str:
+    """无害测试函数，用于验证 ProcessPoolExecutor 可用"""
+    return 'pong'
+
+
 def _convert_worker(args) -> Tuple[str, bool, str]:
     txt_path, docx_path = args
     try:
@@ -659,7 +858,7 @@ def batch_convert_txt_to_docx(txt_dir: str = None, max_concurrent: int = 8, incr
     hashes = load_hashes() if incremental else {}
     jobs = []
     for tf in txt_files:
-        docx_path = tf.replace('.txt', '.docx')
+        docx_path = os.path.splitext(tf)[0] + '.docx'
         content_hash = compute_content_hash(open(tf, 'r', encoding='utf-8').read())
         if incremental and os.path.exists(docx_path) and hashes.get(os.path.basename(tf)) == content_hash:
             print(f"  [SKIP] {os.path.basename(tf)} 内容未变化，跳过")
@@ -671,12 +870,21 @@ def batch_convert_txt_to_docx(txt_dir: str = None, max_concurrent: int = 8, incr
 
     print(f"[BATCH] 待转换 {len(jobs)} 个章节，并发上限 {max_concurrent}")
     completed, failed = [], []
-    with ProcessPoolExecutor(max_workers=max_concurrent) as executor:
+    # 优先 ProcessPoolExecutor（真并行），失败时降级为 ThreadPoolExecutor（跨平台兼容）
+    _ExecutorCls = ProcessPoolExecutor
+    try:
+        with ProcessPoolExecutor(max_workers=1) as _test_ex:
+            # 发送一个无害任务验证 subprocess 能启动（pickle 验证）
+            list(_test_ex.map(_pool_ping_test, []))
+    except Exception:
+        _ExecutorCls = ThreadPoolExecutor
+        print("[WARN] ProcessPoolExecutor 不可用（跨平台兼容性），降级为 ThreadPoolExecutor")
+    with _ExecutorCls(max_workers=max_concurrent) as executor:
         futures = {executor.submit(_convert_worker, job): job for job in jobs}
         for future in as_completed(futures):
             docx_path, ok, err = future.result()
             if ok:
-                txt_path = docx_path.replace('.docx', '.txt')
+                txt_path = os.path.splitext(docx_path)[0] + '.txt'
                 if os.path.exists(txt_path):
                     hashes[os.path.basename(txt_path)] = compute_content_hash(
                         open(txt_path, 'r', encoding='utf-8').read())
@@ -689,3 +897,81 @@ def batch_convert_txt_to_docx(txt_dir: str = None, max_concurrent: int = 8, incr
 
     print(f"\n[BATCH] {len(completed)}/{len(jobs)} 成功，{len(failed)} 失败")
     return completed
+
+
+# ============ 健康检查 =============
+
+def doctor() -> Dict[str, Any]:
+    """检查环境依赖，返回问题列表。"""
+    issues = []
+    warnings = []
+
+    # 1. python-docx
+    try:
+        from docx import Document
+        from docx.shared import Pt, RGBColor
+    except ImportError as e:
+        issues.append(f"python-docx 未安装: {e}. 运行: pip install python-docx")
+
+    # 2. lxml
+    try:
+        import lxml
+    except ImportError:
+        issues.append("lxml 未安装（python-docx 依赖）. 运行: pip install lxml")
+
+    # 3. 章节目录可写
+    try:
+        cd = config.get_chapters_dir()
+        os.makedirs(cd, exist_ok=True)
+        test_file = os.path.join(cd, '.write_test')
+        open(test_file, 'w').close(); os.remove(test_file)
+    except Exception as e:
+        issues.append(f"章节目录不可写: {cd}, 错误: {e}")
+
+    # 4. 输出目录可写
+    try:
+        od = config.get_output_dir()
+        os.makedirs(od, exist_ok=True)
+        test_file = os.path.join(od, '.write_test')
+        open(test_file, 'w').close(); os.remove(test_file)
+    except Exception as e:
+        issues.append(f"输出目录不可写: {od}, 错误: {e}")
+
+    # 5. plan.json 存在
+    try:
+        plan = config.load_plan()
+        if not plan.get('chapters'):
+            warnings.append("plan.json 为空或无章节数据，请先运行 glossary 或检查 plan.json")
+    except Exception as e:
+        warnings.append(f"plan.json 读取失败: {e}")
+
+    # 6. Mermaid CLI（可选）
+    mermaid_cli = config.get_mermaid_cli()
+    if not mermaid_cli:
+        warnings.append("Mermaid CLI (mmdc) 未找到，流程图将被跳过（不影响核心功能）")
+
+    # 7. Python 版本
+    import sys
+    if sys.version_info < (3, 8):
+        issues.append(f"Python 版本过低: {sys.version_info.major}.{sys.version_info.minor}，需要 3.8+")
+
+    print("\n========== 环境健康检查 ==========")
+    print(f"Python: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+    print(f"系统: {sys.platform}")
+    print(f"章节目录: {config.get_chapters_dir()}")
+    print(f"输出目录: {config.get_output_dir()}")
+    print(f"Mermaid CLI: {'可用' if mermaid_cli else '不可用（可选）'}")
+    print(f"plan.json: {'正常' if not issues else '有问题'}")
+    print()
+    if issues:
+        print(f"[X] 问题 ({len(issues)} 个):")
+        for iss in issues:
+            print(f"   - {iss}")
+    if warnings:
+        print(f"[!] 警告 ({len(warnings)} 个):")
+        for w in warnings:
+            print(f"   - {w}")
+    if not issues and not warnings:
+        print("[OK] 环境检查通过，无问题")
+    print("================================\n")
+    return {'issues': issues, 'warnings': warnings}

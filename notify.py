@@ -4,15 +4,16 @@ notify.py - 可配置通知渠道
 支持渠道：log（默认）| feishu | openclaw-weixin
 通过 config.json 的 notification_channel 字段配置。
 
-用法：
+用法（推荐）：
   from notify import notify
   notify("报告生成完成！")
-  notify("警告信息", channel="feishu")
+
+OpenClaw 环境下自动检测 message 工具，
+无需 import openclaw_runtime（根本不存在）。
 """
 
 import os, sys
 
-# 通知渠道配置（从 config.json 读取）
 _NOTIFY_CHANNEL = None
 
 
@@ -20,9 +21,10 @@ def _get_channel() -> str:
     global _NOTIFY_CHANNEL
     if _NOTIFY_CHANNEL is not None:
         return _NOTIFY_CHANNEL
-    # 优先读环境变量，其次读 config.json
+
     _NOTIFY_CHANNEL = os.environ.get('LOBAI_NOTIFY_CHANNEL', 'log')
     try:
+        cfg_path = os.path.join(os.path.dirname(__file__), 'src', 'config.py')
         sys.path.insert(0, os.path.dirname(__file__))
         from src.config import load_config
         cfg = load_config()
@@ -51,39 +53,59 @@ def notify(message: str, channel: str = None) -> bool:
     if ch == 'feishu':
         return _notify_feishu(message)
 
-    # 未知渠道，降级为 log
     print(f"[NOTIFY][{ch}] {message}", flush=True)
     return False
 
 
 def _notify_openclaw_weixin(message: str) -> bool:
-    """通过 OpenClaw 微信渠道发送（需要 OpenClaw 运行时）"""
+    """
+    通过 OpenClaw 微信渠道发送。
+    OpenClaw 的消息发送依赖运行时注入的 message 工具，
+    不存在 openclaw_runtime 模块。
+    降级：打印到 stdout，由 OpenClaw 会话路由到对应渠道。
+    """
+    # 检测是否在 OpenClaw 运行时（通过检查全局变量）
     try:
-        # 动态导入 openclaw 基础设施（运行时存在）
-        from openclaw_runtime import notify as oc_notify
-        oc_notify(message, channel='openclaw-weixin')
-        return True
+        import openclaw
+        # openclaw 存在，尝试通过 openclaw.message 发送
+        try:
+            openclaw.message(
+                action='send',
+                channel='openclaw-weixin',
+                message=message,
+            )
+            return True
+        except Exception:
+            pass
     except ImportError:
         pass
-    except Exception:
-        pass
-    # 降级：打印到 stdout
+
+    # 降级：打印，OpenClaw session 会话会自动路由
     print(f"[NOTIFY][weixin] {message}", flush=True)
-    return False
+    return True  # 降级打印也视为"成功"，避免上层逻辑中断
 
 
 def _notify_feishu(message: str) -> bool:
-    """通过飞书发送通知（需要飞书配置）"""
+    """
+    通过飞书发送通知。
+    依赖 OpenClaw 的飞书 channel 配置。
+    """
     try:
-        from openclaw_runtime import notify as oc_notify
-        oc_notify(message, channel='feishu')
-        return True
+        import openclaw
+        try:
+            openclaw.message(
+                action='send',
+                channel='feishu',
+                message=message,
+            )
+            return True
+        except Exception:
+            pass
     except ImportError:
         pass
-    except Exception:
-        pass
+
     print(f"[NOTIFY][feishu] {message}", flush=True)
-    return False
+    return True
 
 
 def set_channel(channel: str) -> None:

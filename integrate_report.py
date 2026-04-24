@@ -49,6 +49,7 @@ from src.engine import (
     generate_with_accurate_toc as generate_with_accurate_toc,
     convert_single_chapter_inline as convert_single_chapter_inline,
     batch_convert_txt_to_docx as batch_convert_txt_to_docx,
+    doctor as doctor,
 )
 
 # ---- CLI 入口（兼容 python integrate_report.py 用法）----

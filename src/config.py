@@ -56,7 +56,7 @@ def _load_paths() -> Dict[str, str]:
             'REFERENCE_FILE': os.path.join(cd, 'reference_material.txt'),
             'OUTLINE_SNAPSHOT': os.path.join(cd, 'plan_outline_snapshot.md'),
             'CONFIG_FILE': os.path.join(cd, 'config.json'),
-            'FINAL_DOC': os.path.join(od, '整合报告.docx'),
+            'FINAL_DOC': os.path.join(od, os.environ.get('LOBAI_OUTPUT_FILENAME', '整合报告.docx')),
             'HASH_FILE': os.path.join(cd, 'content_hashes.json'),
             'MERMAID_TEMP': os.path.join(cd, 'mermaid_temp'),
             'MERMAID_PUPPETEER_CONFIG': os.path.join(cd, 'mermaid_temp', 'puppeteer_config.json'),

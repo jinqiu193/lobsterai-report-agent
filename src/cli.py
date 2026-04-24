@@ -11,6 +11,26 @@ from . import engine
 
 def main():
     argv = sys.argv[1:]
+    if '--help' in argv or '-h' in argv:
+        print("Usage: python integrate_report.py [command]\n")
+        print("Commands:")
+        print("  (none)           生成整合报告")
+        print("  convert-batch    批量转换 txt -> docx")
+        print("  convert-one <in.txt> <out.docx>  单章转换")
+        print("  glossary         生成/更新术语表")
+        print("  check            跨章一致性审查")
+        print("  status           查看撰写进度")
+        print("  plan show        查看大纲")
+        print("  config show      查看配置")
+        print("  ref show|clear  查看/清空参考资料")
+        print("  feishu-search <关键词>  搜索飞书知识库（建议在对话中描述需求）")
+        print("  doctor           环境健康检查")
+        print("\nEnvironment variables:")
+        print("  LOBAI_CHAPTERS_DIR    章节目录")
+        print("  LOBAI_OUTPUT_DIR      输出目录")
+        print("  LOBAI_OUTPUT_FILENAME 输出文件名（默认：整合报告.docx）")
+        print("  LOBAI_NOTIFY_CHANNEL  通知渠道：log | feishu | openclaw-weixin")
+        return
     if not argv:
         # 默认：生成整合报告
         txt_dir = argv[0] if argv else None
@@ -75,11 +95,27 @@ def main():
             print(json.dumps(plan, ensure_ascii=False, indent=2))
 
     elif cmd == 'config':
-        # 查看/编辑 config.json
         if len(argv) >= 2 and argv[1] == 'show':
             import json
             cfg = config.load_config()
             print(json.dumps(cfg, ensure_ascii=False, indent=2))
+
+    elif cmd == 'feishu-search':
+        # Feishu 搜索是 MCP 工具，不是 CLI 命令
+        # OpenClaw Agent 应使用 feishu_search_doc_wiki 工具搜索飞书知识库
+        # 本命令仅提示用法
+        query = ' '.join(argv[1:]) if len(argv) > 1 else ''
+        if not query:
+            print("用法: python integrate_report.py feishu-search <关键词>\n")
+            print("注意: 这是 MCP 工具命令，请在 OpenClaw 对话中描述搜索需求，")
+            print("      Agent 会自动调用 feishu_search_doc_wiki 工具搜索飞书知识库。")
+        else:
+            print(f"[FEISHU-SEARCH] 关键词: {query}\n")
+            print("OpenClaw Agent 请在对话中说：")
+            print(f'  "搜索飞书知识库，关键词：{query}"')
+
+    elif cmd == 'doctor':
+        engine.doctor()
 
     else:
         # 未知命令，降级为 generate

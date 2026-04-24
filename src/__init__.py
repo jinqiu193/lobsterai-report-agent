@@ -38,6 +38,7 @@ from .engine import (
     generate_with_accurate_toc,
     convert_single_chapter_inline,
     batch_convert_txt_to_docx,
+    doctor,
 )
 from .cli import main as cli_main
 
@@ -54,7 +55,7 @@ __all__ = [
     'safe_parse_chapter', 'parse_chapters', 'count_chars',
     'check_cross_chapter_consistency',
     'generate_final_doc', 'generate_with_accurate_toc',
-    'convert_single_chapter_inline', 'batch_convert_txt_to_docx',
+    'convert_single_chapter_inline', 'batch_convert_txt_to_docx', 'doctor',
     # cli
     'cli_main',
 ]
